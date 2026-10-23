@@ -1,69 +1,142 @@
+/* The map card: a short map by default, a tall one when the merchant picks full size. */
+.dispatch-map__stage {
+  position: relative;
+}
+
 .dispatch-map__canvas {
-  block-size: min(58vh, 560px);
-  min-block-size: 360px;
-  border: 1px solid #d1d5db;
-  border-radius: 12px;
+  block-size: 300px;
   overflow: hidden;
 }
 
-.dispatch-map__controls {
+.dispatch-map__stage--full .dispatch-map__canvas {
+  block-size: min(78vh, 780px);
+}
+
+/* Everything on top of the map (small buttons and short notes) sits in its top-left corner. */
+.dispatch-map__overlay {
+  position: absolute;
+  inset-block-start: 8px;
+  inset-inline-start: 8px;
+  z-index: 2;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  pointer-events: none;
 }
 
-.dispatch-map__button {
-  min-block-size: 32px;
-  padding: 5px 10px;
-  border: 1px solid #9ca3af;
-  border-radius: 6px;
-  background: #fff;
-  color: #1f2937;
-  font: inherit;
-  cursor: pointer;
+.dispatch-map__overlay > * {
+  pointer-events: auto;
 }
 
-.dispatch-map__button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
+.dispatch-map__toolbar {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 1px 4px rgb(15 23 42 / 25%);
 }
 
-.dispatch-map__marker {
-  inline-size: 30px;
-  block-size: 30px;
-  border: 2px solid #fff;
-  border-radius: 50%;
-  background: var(--marker-color, #2563eb);
-  box-shadow: 0 1px 4px rgb(15 23 42 / 45%);
-  color: #fff;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-/* The delivery summary inside a pin popup: one small paragraph, nothing else. */
-.dispatch-map__popup {
-  margin: 0;
-  color: #1f2937;
+/* A short note over the map, like the route length. */
+.dispatch-map__chip {
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 1px 4px rgb(15 23 42 / 25%);
+  color: #374151;
   font-size: 12px;
   line-height: 1.4;
 }
 
-/* The short note under the summary when a pin is only a best guess. */
-.dispatch-map__popup--note {
-  margin-block-start: 4px;
+.dispatch-map__chip--critical {
+  color: #b91c1c;
+}
+
+/* A pin is a teardrop. The point at the bottom sits on the delivery address. */
+.dispatch-map__marker {
+  position: relative;
+  z-index: 0;
+  inline-size: 30px;
+  block-size: 34px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #fff;
+  font: 700 12px/28px system-ui, sans-serif;
+  text-align: center;
+  cursor: pointer;
+}
+
+.dispatch-map__marker::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset-block-start: 0;
+  inset-inline-start: 1px;
+  box-sizing: border-box;
+  inline-size: 28px;
+  block-size: 28px;
+  border: 2px solid #fff;
+  border-radius: 50% 50% 50% 0;
+  background: var(--marker-color, #2563eb);
+  box-shadow: 0 1px 4px rgb(15 23 42 / 40%);
+  transform: rotate(-45deg);
+}
+
+/* The shop's start and end point of every round trip. */
+.dispatch-map__marker--hub {
+  --marker-color: #14213d;
+  color: #8ac926;
+  font-size: 14px;
+  cursor: default;
+}
+
+/*
+ * The pin popup: one field per line, small text, so it reads in a single glance.
+ * The order number is the bold title; related lines are kept in groups with a little
+ * space between the groups.
+ */
+.dispatch-map__popup {
+  min-inline-size: 200px;
+  color: #1f2937;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.dispatch-map__popup-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dispatch-map__popup-group {
+  margin-block-start: 8px;
+}
+
+.dispatch-map__popup-line {
+  margin: 0;
+}
+
+/* The amber note under the address when a pin is only a best guess. */
+.dispatch-map__popup-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 8px 0 0;
   color: #92400e;
 }
 
-/* A pin whose address only partly matched gets a small amber "!" badge. */
-.dispatch-map__marker--approximate {
-  position: relative;
+.dispatch-map__popup-note svg {
+  flex: none;
+  margin-block-start: 3px;
 }
 
+/* A pin whose address only partly matched gets a small amber "!" badge. */
 .dispatch-map__marker--approximate::after {
   content: "!";
   position: absolute;
-  inset-block-start: -6px;
+  inset-block-start: -4px;
   inset-inline-end: -6px;
   inline-size: 15px;
   block-size: 15px;
@@ -74,20 +147,6 @@
   font-size: 10px;
   font-weight: 700;
   line-height: 12px;
-}
-
-/* The shop's start and end point of every round trip. */
-.dispatch-map__hub {
-  display: grid;
-  place-items: center;
-  inline-size: 32px;
-  block-size: 32px;
-  border: 2px solid #fff;
-  border-radius: 50%;
-  background: #14213d;
-  box-shadow: 0 1px 4px rgb(15 23 42 / 45%);
-  color: #8ac926;
-  font-size: 16px;
 }
 
 /* The trash button at the very bottom of a pin popup. It turns red on hover. */
@@ -104,10 +163,4 @@
 .dispatch-map__remove:hover,
 .dispatch-map__remove:focus-visible {
   color: #b91c1c;
-}
-
-@media (max-width: 640px) {
-  .dispatch-map__canvas {
-    min-block-size: 300px;
-  }
 }

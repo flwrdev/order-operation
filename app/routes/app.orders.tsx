@@ -1096,6 +1096,43 @@ function Extension() {
     selectedResources,
   );
 
+  // Whether the delivery map is shown. The merchant's choice is remembered in this
+  // browser only. It stays null until that choice is read, so the map never loads
+  // (and never counts as a Mapbox map load) while it is hidden.
+  const [mapVisible, setMapVisible] = useState<boolean | null>(null);
+  useEffect(() => {
+    let visible = true;
+    try {
+      visible = window.localStorage.getItem("deliveryMapVisible") !== "off";
+    } catch {
+      // Storage can be blocked; the map then simply starts shown.
+    }
+    setMapVisible(visible);
+  }, []);
+  const changeMapVisible = useCallback((visible: boolean) => {
+    setMapVisible(visible);
+    try {
+      window.localStorage.setItem("deliveryMapVisible", visible ? "on" : "off");
+    } catch {
+      // Storage can be blocked; the choice then lasts until the page is closed.
+    }
+  }, []);
+  // Pressing "Add to map" also shows the map, so the orders are never added to a hidden map.
+  const addSelectedAndShowMap = useCallback(() => {
+    addSelected();
+    changeMapVisible(true);
+  }, [addSelected, changeMapVisible]);
+
+  // The order whose pin is open on the map. Its table row gets a background colour.
+  const [pinnedOrderId, setPinnedOrderId] = useState<string | null>(null);
+  const focusPin = useCallback((orderId: string) => setPinnedOrderId(orderId), []);
+  // Only clears when the pin that closed is still the marked one, so opening another pin is not undone.
+  const blurPin = useCallback(
+    (orderId: string) =>
+      setPinnedOrderId((current) => (current === orderId ? null : current)),
+    [],
+  );
+
   // Removes selected ids that are no longer in the displayed list (after a filter, tab, page or
   // refresh change).
   useEffect(() => {
@@ -2072,6 +2109,14 @@ function Extension() {
             </s-text>
             <s-button
               variant="tertiary"
+              icon="map"
+              onClick={() => changeMapVisible(mapVisible === false)}
+              accessibilityLabel={mapVisible === false ? "Show the delivery map" : "Hide the delivery map"}
+            >
+              {mapVisible === false ? "Show map" : "Hide map"}
+            </s-button>
+            <s-button
+              variant="tertiary"
               onClick={refresh}
               loading={flag(isRefreshing)}
               accessibilityLabel="Refresh orders"
@@ -2079,12 +2124,16 @@ function Extension() {
               Refresh
             </s-button>
           </s-stack>
-          <DispatchMap
-            accessToken={loaderData.mapboxPublicToken}
-            orders={mapOrders}
-            onRemoveOrder={removeOrder}
-            onClearAll={clearMap}
-          />
+          {mapVisible === true && (
+            <DispatchMap
+              accessToken={loaderData.mapboxPublicToken}
+              orders={mapOrders}
+              onRemoveOrder={removeOrder}
+              onClearAll={clearMap}
+              onPinFocus={focusPin}
+              onPinBlur={blurPin}
+            />
+          )}
           <s-section padding="none">
             <OrdersIndexTable
               orders={displayedOrders}
@@ -2117,7 +2166,8 @@ function Extension() {
               onOpenOrder={openOrderPanel}
               onShowTags={(orderId) => setTagsModalOrderId(orderId)}
               onOpenBulkModal={openModal}
-              onAddToMap={addSelected}
+              onAddToMap={addSelectedAndShowMap}
+              highlightedOrderId={pinnedOrderId}
               newOrderIds={newOrderIds}
               changedOrderIds={changedOrderIds}
             />

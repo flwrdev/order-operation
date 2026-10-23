@@ -21,8 +21,26 @@ export interface DispatchMapOrder {
   deliveryDate: string | null;
   deliveryTimeSlot: string | null;
   fulfillmentStatus: string;
-  /** The one-line delivery summary shown when a pin is clicked. */
-  popupText: string;
+  /** What the popup shows when a pin is clicked, one field per line. */
+  popup: PopupDetails;
+}
+
+/**
+ * The fields shown in a pin popup, one per line. A field with no value is empty
+ * (or an empty list), and the popup leaves its line out, so it never shows a placeholder.
+ */
+export interface PopupDetails {
+  name: string;
+  /** Street lines: address1, then address2 when it has text. */
+  streetLines: string[];
+  /** "City, Province". */
+  area: string;
+  /** "10-24-2026, 9:00 AM - 12:00 PM". */
+  delivery: string;
+  /** One entry per item, like "1x Bouquet of flowers". */
+  items: string[];
+  /** "₱1,099". */
+  price: string;
 }
 
 /** Turns "2026-10-23" into "10-23-2026". Anything else gives "" so it is left out. */
@@ -56,41 +74,38 @@ function formatPopupPrice(order: Order): string {
 }
 
 /**
- * Builds the delivery summary for the pin popup, for example
- * "john doe, blk3, tanay, rizal. 10-23-2026, 9:00 AM - 12:00 PM, 1x bouquet, ₱1,099".
- * A part that has no value is left out, so the popup never shows a placeholder.
+ * Collects the fields for the pin popup, one value per line: the recipient's name, the
+ * street lines, "City, Province", the delivery date and time, the items, and the price.
+ * The order number is added at the top by the map itself.
  */
-export function buildPopupText(order: Order): string {
+export function buildPopupDetails(order: Order): PopupDetails {
   const address = order.shippingAddress;
   const clean = (value: string | null | undefined) =>
     value?.trim().replace(/\s+/g, " ") ?? "";
   const joinParts = (parts: Array<string | null | undefined>, separator: string) =>
     parts.map(clean).filter(Boolean).join(separator);
 
-  const name =
-    joinParts([address?.firstName, address?.lastName], " ") ||
-    joinParts([order.customer?.firstName, order.customer?.lastName], " ");
-  const place = joinParts(
-    [address?.address1, address?.address2, address?.city, address?.province],
-    ", ",
-  );
-  const items = (order.lineItems?.edges ?? [])
-    .map(({ node }) => `${node.quantity}x ${clean(node.name)}`)
-    .join(", ");
   const date = getDeliveryDateValue(order);
   const slot = getDeliveryTimeValue(order);
 
-  const who = joinParts([name, place], ", ");
-  const when = joinParts(
-    [
-      formatPopupDate(date === "—" ? null : date),
-      formatPopupTime(slot === "—" ? null : slot),
-      items,
-      formatPopupPrice(order),
-    ],
-    ", ",
-  );
-  return joinParts([who, when], ". ");
+  return {
+    name:
+      joinParts([address?.firstName, address?.lastName], " ") ||
+      joinParts([order.customer?.firstName, order.customer?.lastName], " "),
+    streetLines: [clean(address?.address1), clean(address?.address2)].filter(Boolean),
+    area: joinParts([address?.city, address?.province], ", "),
+    delivery: joinParts(
+      [
+        formatPopupDate(date === "—" ? null : date),
+        formatPopupTime(slot === "—" ? null : slot),
+      ],
+      ", ",
+    ),
+    items: (order.lineItems?.edges ?? []).map(
+      ({ node }) => `${node.quantity}x ${clean(node.name)}`,
+    ),
+    price: formatPopupPrice(order),
+  };
 }
 
 /**
@@ -172,6 +187,6 @@ export function toDispatchMapOrder(order: Order): DispatchMapOrder | null {
     deliveryDate: date === "—" ? null : date,
     deliveryTimeSlot: timeSlot === "—" ? null : timeSlot,
     fulfillmentStatus: order.displayFulfillmentStatus,
-    popupText: buildPopupText(order),
+    popup: buildPopupDetails(order),
   };
 }

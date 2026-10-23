@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   addSelectedToMap,
-  buildPopupText,
+  buildPopupDetails,
   normalizeDispatchAddress,
   removeFromMap,
   resolveMapOrders,
@@ -69,8 +69,8 @@ describe("dispatch map order adapter", () => {
   });
 });
 
-// The popup shows one short delivery summary and never a placeholder.
-describe("pin popup text", () => {
+// The popup shows one field per line and never a placeholder.
+describe("pin popup details", () => {
   const fullOrder = {
     ...order,
     customAttributes: [],
@@ -99,26 +99,31 @@ describe("pin popup text", () => {
     currentTotalPriceSet: { shopMoney: { amount: "1099.00", currencyCode: "PHP" } },
   } satisfies Order;
 
-  it("writes name, address, date, time, items and price in one line", () => {
-    expect(buildPopupText(fullOrder)).toBe(
-      "john doe, blk3, lot19, phase 2, tanay, rizal. 10-24-2026, 9:00 AM - 12:00 PM, 1x bouquet of flowers, ₱1,099",
-    );
+  it("gives one value per field: name, street lines, area, delivery, items and price", () => {
+    expect(buildPopupDetails(fullOrder)).toEqual({
+      name: "john doe",
+      streetLines: ["blk3", "lot19, phase 2"],
+      area: "tanay, rizal",
+      delivery: "10-24-2026, 9:00 AM - 12:00 PM",
+      items: ["1x bouquet of flowers"],
+      price: "₱1,099",
+    });
   });
 
   it("is what the map order carries for the popup", () => {
-    expect(toDispatchMapOrder(fullOrder)?.popupText).toBe(buildPopupText(fullOrder));
+    expect(toDispatchMapOrder(fullOrder)?.popup).toEqual(buildPopupDetails(fullOrder));
   });
 
   it("falls back to the buyer's name when the address has no name", () => {
-    const text = buildPopupText({
+    const details = buildPopupDetails({
       ...fullOrder,
       shippingAddress: { ...fullOrder.shippingAddress, firstName: null, lastName: null },
     });
-    expect(text.startsWith("Mia Reyes, blk3")).toBe(true);
+    expect(details.name).toBe("Mia Reyes");
   });
 
   it("leaves out anything missing instead of showing a placeholder", () => {
-    const text = buildPopupText({
+    const details = buildPopupDetails({
       ...fullOrder,
       customAttributes: [],
       tags: [],
@@ -127,24 +132,50 @@ describe("pin popup text", () => {
       lineItems: null,
       currentTotalPriceSet: null,
     });
-    expect(text).toBe("john doe, blk3, lot19, phase 2, tanay, rizal");
-    expect(text).not.toMatch(/—|N\/A|undefined|null/);
+    expect(details).toEqual({
+      name: "john doe",
+      streetLines: ["blk3", "lot19, phase 2"],
+      area: "tanay, rizal",
+      delivery: "",
+      items: [],
+      price: "",
+    });
+    expect(JSON.stringify(details)).not.toMatch(/—|N\/A|undefined|null/);
+  });
+
+  it("drops an empty second street line", () => {
+    const details = buildPopupDetails({
+      ...fullOrder,
+      shippingAddress: { ...fullOrder.shippingAddress, address2: "  " },
+    });
+    expect(details.streetLines).toEqual(["blk3"]);
+  });
+
+  it("lists each item on its own entry", () => {
+    const item = fullOrder.lineItems.edges[0];
+    const details = buildPopupDetails({
+      ...fullOrder,
+      lineItems: {
+        edges: [item, { node: { ...item.node, name: "card", quantity: 2 } }],
+      },
+    });
+    expect(details.items).toEqual(["1x bouquet of flowers", "2x card"]);
   });
 
   it("shows cents only when the price has cents", () => {
-    const text = buildPopupText({
+    const details = buildPopupDetails({
       ...fullOrder,
       currentTotalPriceSet: { shopMoney: { amount: "1099.50", currencyCode: "PHP" } },
     });
-    expect(text.endsWith("₱1,099.50")).toBe(true);
+    expect(details.price).toBe("₱1,099.50");
   });
 
   it("shows an unreadable time slot as it was saved", () => {
-    const text = buildPopupText({
+    const details = buildPopupDetails({
       ...fullOrder,
       customTimeSlot: { value: "Anytime" },
     });
-    expect(text).toContain("10-24-2026, Anytime, 1x bouquet of flowers");
+    expect(details.delivery).toBe("10-24-2026, Anytime");
   });
 });
 

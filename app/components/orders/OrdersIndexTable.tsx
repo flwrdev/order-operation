@@ -98,19 +98,45 @@ export interface OrdersIndexTableProps {
   onOpenBulkModal: (name: BulkModalName) => void;
   /** Puts the ticked orders on the delivery map. The button is hidden when this is not given. */
   onAddToMap?: () => void;
+  /** The order whose pin is open on the delivery map. Its row is shown with a background colour. */
+  highlightedOrderId?: string | null;
   // Orders that appeared or changed schedule since the last refresh of the same view. They
   // get a small badge until the notice banner is dismissed.
   newOrderIds?: ReadonlySet<string>;
   changedOrderIds?: ReadonlySet<string>;
 }
 
+// The Polaris table cell paints its background from a CSS variable. The variable's name ends
+// in a version code (today "-6e076"), so the real name is read from the cell's own styles. If
+// that fails, the name below is used. Worst case the row colour does not show; nothing breaks.
+const FALLBACK_CELL_BACKGROUND_VAR = "--s-table-cell-background-6e076";
+const MAP_HIGHLIGHT_COLOR = "#e8f0fe";
+
+function findCellBackgroundVar(cell: HTMLElement): string {
+  const root = cell.shadowRoot;
+  if (!root) return FALLBACK_CELL_BACKGROUND_VAR;
+  const styles = [
+    ...(root.adoptedStyleSheets ?? []).flatMap((sheet) =>
+      Array.from(sheet.cssRules, (rule) => rule.cssText),
+    ),
+    ...Array.from(root.querySelectorAll("style"), (style) => style.textContent ?? ""),
+  ];
+  return (
+    styles.join("\n").match(/--s-table-cell-background-[a-z0-9]+/)?.[0] ??
+    FALLBACK_CELL_BACKGROUND_VAR
+  );
+}
+
 // A table row that calls `onActivate` when the merchant clicks it. A click inside an element
 // marked with `data-row-ignore` (a checkbox or a link) is left alone.
 function ClickableRow({
   onActivate,
+  highlighted,
   children,
 }: {
   onActivate: () => void;
+  /** True while this order's pin is open on the delivery map; the row gets a background colour. */
+  highlighted?: boolean;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLElementTagNameMap["s-table-row"]>(null);
@@ -123,6 +149,17 @@ function ClickableRow({
       );
     if (!ignored) onActivate();
   });
+  // Colours every cell of the row while its pin is open on the map, and clears it after.
+  useEffect(() => {
+    const cells = Array.from(ref.current?.querySelectorAll<HTMLElement>("s-table-cell") ?? []);
+    if (cells.length === 0) return;
+    const variable = findCellBackgroundVar(cells[0]);
+    for (const cell of cells) {
+      if (highlighted) cell.style.setProperty(variable, MAP_HIGHLIGHT_COLOR);
+      else cell.style.removeProperty(variable);
+    }
+  }, [highlighted]);
+
   return <s-table-row ref={ref}>{children}</s-table-row>;
 }
 
@@ -158,6 +195,7 @@ export function OrdersIndexTable({
   onShowTags,
   onOpenBulkModal,
   onAddToMap,
+  highlightedOrderId,
   newOrderIds,
   changedOrderIds,
 }: OrdersIndexTableProps) {
@@ -361,7 +399,11 @@ export function OrdersIndexTable({
     const extraTags = meaningfulTags.length - shownTags.length;
 
     return (
-      <ClickableRow key={order.id} onActivate={() => onOpenOrder(order.id)}>
+      <ClickableRow
+        key={order.id}
+        onActivate={() => onOpenOrder(order.id)}
+        highlighted={order.id === highlightedOrderId}
+      >
         <s-table-cell>
           <s-stack direction="inline" gap="small-200" alignItems="start">
             <div data-row-ignore="true">
