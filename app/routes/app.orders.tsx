@@ -32,6 +32,7 @@ import {
   getDeliveryTimeValue,
   formatDeliveryDate,
 } from "../lib/order-utils";
+import { toDispatchMapOrder } from "../lib/dispatch-map";
 import {
   useLoaderData,
   useNavigate,
@@ -67,6 +68,7 @@ import { SendEmailModal } from "../components/orders/SendEmailModal";
 import { EmailViewModal } from "../components/orders/EmailViewModal";
 import { EditDetailsModal } from "../components/orders/EditDetailsModal";
 import { NotificationsBell } from "../components/orders/NotificationsBell";
+import { DispatchMap } from "../components/orders/DispatchMap";
 import type {
   EmailReplyNotification,
   MailboxMessage,
@@ -116,8 +118,14 @@ import {
 import { computeDateRefs, enumerateISODates } from "../lib/date-refs";
 import { authenticate } from "../shopify.server";
 import panelStylesHref from "../styles/order-details-panel.css?url";
+import dispatchMapStylesHref from "../styles/dispatch-map.css?url";
+import mapboxStylesHref from "mapbox-gl/dist/mapbox-gl.css?url";
 
-export const links = () => [{ rel: "stylesheet", href: panelStylesHref }];
+export const links = () => [
+  { rel: "stylesheet", href: panelStylesHref },
+  { rel: "stylesheet", href: dispatchMapStylesHref },
+  { rel: "stylesheet", href: mapboxStylesHref },
+];
 
 // Opening/closing the details panel only toggles the ?order search param, and
 // the panel reads its order from already-loaded data — skip the loader re-run
@@ -222,6 +230,10 @@ const GET_ORDERS_QUERY = `
             company
             provinceCode
             countryCodeV2
+            # Read-only: Shopify's own map position for the address. The Orders
+            # map uses it first so most pins need no address lookup.
+            latitude
+            longitude
           }
           billingAddress {
             name
@@ -435,6 +447,8 @@ type LoaderData = {
   pageSize: number;
   /** Google Maps key for the Edit-details address search; "" hides the field. */
   mapsApiKey: string;
+  /** Browser-safe Mapbox public token for the rider dispatch map; "" hides it. */
+  mapboxPublicToken: string;
   /** Meta Page ID for the Messenger inbox deep link; "" hides the link. */
   metaPageId: string;
   /** Customer reschedules from the last 48 h not yet marked Seen — the "Rescheduled today" banner; degrades to empty. */
@@ -664,6 +678,9 @@ export const loader = async ({
       // the key itself must be locked down in the Google Cloud console:
       // HTTP-referrer restriction + Places API only.
       mapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? "",
+      // This is a public Mapbox browser token only. It must use URL
+      // restrictions in Mapbox and must never be a secret server token.
+      mapboxPublicToken: process.env.MAPBOX_PUBLIC_TOKEN ?? "",
       metaPageId: (process.env.META_PAGE_ID ?? process.env.MESSENGER_PAGE_ID ?? "").trim(),
     } satisfies LoaderData,
     { headers: { "Cache-Control": "no-store" } },
@@ -1059,6 +1076,16 @@ function Extension() {
     }
     return list;
   }, [orders, tabParam, dateRefs, sortParam, deliveryDateFilter, timeWindowParam]);
+
+  // The map receives this already-filtered table list, never a separate
+  // Shopify query, so both surfaces always describe the same dispatch work.
+  const dispatchMapOrders = useMemo(
+    () =>
+      displayedOrders
+        .map((order) => toDispatchMapOrder(order))
+        .filter((order): order is NonNullable<typeof order> => order !== null),
+    [displayedOrders],
+  );
 
   // ── Row selection — which orders are ticked in the table ───────────────────
 
@@ -2054,6 +2081,10 @@ function Extension() {
               Refresh
             </s-button>
           </s-stack>
+          <DispatchMap
+            accessToken={loaderData.mapboxPublicToken}
+            orders={dispatchMapOrders}
+          />
           <s-section padding="none">
             <OrdersIndexTable
               orders={displayedOrders}

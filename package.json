@@ -34,6 +34,7 @@
     "imapflow": "^2.1.0",
     "isbot": "^5.1.31",
     "mailparser": "^3.9.29",
+    "mapbox-gl": "^3.33.0",
     "nodemailer": "^9.0.3",
     "prisma": "^7.10.0",
     "react": "^18.3.1",

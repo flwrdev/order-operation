@@ -44,6 +44,9 @@ export interface ShippingAddress {
   company?: string | null;
   provinceCode?: string | null;
   countryCodeV2?: string | null;
+  /** Shopify's own map position for the address (read-only); null when Shopify could not place it. */
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 export interface BillingAddress {
