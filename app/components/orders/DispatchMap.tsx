@@ -1,6 +1,6 @@
-// This map is only a picture of the orders the Orders table already shows. It
-// reads them, finds where each one is, and draws pins and a round-trip route.
-// It never changes an order, tag, metafield, or attribute in Shopify.
+// This map draws only the orders the merchant added from the Orders table with the
+// "Add to map" button. It reads them, finds where each one is, and draws pins and a
+// round-trip route. It never changes an order, tag, metafield, or attribute in Shopify.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GeoJSONSource, Map as MapboxMap, Marker } from "mapbox-gl";
@@ -29,7 +29,12 @@ type PlacedOrder = DispatchMapOrder & { coordinates: LngLat; approximate: boolea
 
 interface DispatchMapProps {
   accessToken: string;
+  /** The orders on the map: the ones the merchant added from the table. */
   orders: DispatchMapOrder[];
+  /** Called with an order id when the trash button in its popup is pressed. */
+  onRemoveOrder: (orderId: string) => void;
+  /** Called when "Clear all" is pressed. */
+  onClearAll: () => void;
 }
 
 interface PinEntry {
@@ -42,6 +47,7 @@ interface PinEntry {
 const ROUTE_SOURCE_ID = "dispatch-route";
 const ROUTE_CASING_LAYER_ID = "dispatch-route-casing";
 const ROUTE_LAYER_ID = "dispatch-route-line";
+
 // What the route layer is given to draw (the same type Mapbox's setData accepts).
 type LineData = Parameters<GeoJSONSource["setData"]>[0];
 const EMPTY_LINE: LineData = { type: "FeatureCollection", features: [] };
@@ -106,21 +112,24 @@ function toLineData(points: LngLat[]): LineData {
     : EMPTY_LINE;
 }
 
-/** The embedded delivery map mirrors the exact Orders table filter result. */
-export function DispatchMap({ accessToken, orders }: DispatchMapProps) {
+/** The embedded delivery map. It shows the orders added from the Orders table. */
+export function DispatchMap({ accessToken, orders, onRemoveOrder, onClearAll }: DispatchMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapboxMap | null>(null);
   const mapboxRef = useRef<MapboxGL | null>(null);
   const pinsRef = useRef(new Map<string, PinEntry>());
-  const lastFitKeyRef = useRef("");
+  // The order ids the map has already zoomed for, so it zooms only when a new order appears.
+  const zoomedIdsRef = useRef<Set<string>>(new Set());
   const fitRef = useRef<() => void>(() => {});
+  // The popup's trash button reads the latest callback through this, so a new
+  // callback from the parent never makes the pins rebuild.
+  const removeRef = useRef(onRemoveOrder);
+  removeRef.current = onRemoveOrder;
 
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
   // Address lookups already answered this visit, by address. null = Mapbox found nothing.
   const [lookups, setLookups] = useState<Record<string, GeocodeResult | null>>({});
-  // Pins the merchant took off the map. This only hides the pin here.
-  const [removedIds, setRemovedIds] = useState<Set<string>>(() => new Set());
   const [routeOn, setRouteOn] = useState(false);
   const [roadRoute, setRoadRoute] = useState<RoadRoute | null>(null);
   const [isThreeDimensional, setIsThreeDimensional] = useState(false);
@@ -170,14 +179,10 @@ export function DispatchMap({ accessToken, orders }: DispatchMapProps) {
     (order) => !order.coordinates && order.addressKey in lookups && lookups[order.addressKey] === null,
   ).length;
 
-  const visibleOrders = useMemo(
-    () => placedOrders.filter((order) => !removedIds.has(order.id)),
-    [placedOrders, removedIds],
-  );
-  // Pins are numbered in this order: the table order, or the short round trip.
+  // Pins are numbered in this order: the order they were added, or the short round trip.
   const stops = useMemo(
-    () => (routeOn ? optimizeStops(DISPATCH_HUB.lngLat, visibleOrders) : visibleOrders),
-    [routeOn, visibleOrders],
+    () => (routeOn ? optimizeStops(DISPATCH_HUB.lngLat, placedOrders) : placedOrders),
+    [routeOn, placedOrders],
   );
 
   // The straight route, used until (or unless) the road route arrives.
@@ -270,7 +275,7 @@ export function DispatchMap({ accessToken, orders }: DispatchMapProps) {
       cancelled = true;
       pins.forEach(({ marker }) => marker.remove());
       pins.clear();
-      lastFitKeyRef.current = "";
+      zoomedIdsRef.current = new Set();
       map?.remove();
       mapRef.current = null;
       mapboxRef.current = null;
@@ -298,9 +303,7 @@ export function DispatchMap({ accessToken, orders }: DispatchMapProps) {
       const ariaLabel = `Show delivery details for ${order.orderNumber}, stop ${label}`;
       const signature = `${order.orderNumber}|${order.popupText}|${order.approximate}`;
       const buildPopup = () =>
-        createPopupContent(order, () =>
-          setRemovedIds((previous) => new Set(previous).add(order.id)),
-        );
+        createPopupContent(order, () => removeRef.current(order.id));
 
       const existing = pins.get(order.id);
       if (existing) {
@@ -338,13 +341,13 @@ export function DispatchMap({ accessToken, orders }: DispatchMapProps) {
     if (mapReady) source?.setData(toLineData(lineCoordinates));
   }, [mapReady, lineCoordinates]);
 
-  // Zoom to the pins (and the hub). Used by the Fit button and the automatic fit below.
+  // Zoom to the pins (and the hub). Used by the Fit button and the automatic zoom below.
   fitRef.current = () => {
     const map = mapRef.current;
     const mapboxgl = mapboxRef.current;
     if (!map || !mapboxgl) return;
     const bounds = new mapboxgl.LngLatBounds(DISPATCH_HUB.lngLat, DISPATCH_HUB.lngLat);
-    for (const order of visibleOrders) bounds.extend(order.coordinates);
+    for (const order of placedOrders) bounds.extend(order.coordinates);
     map.fitBounds(bounds, {
       padding: 60,
       maxZoom: 14,
@@ -353,17 +356,15 @@ export function DispatchMap({ accessToken, orders }: DispatchMapProps) {
   };
   const fitToStops = useCallback(() => fitRef.current(), []);
 
-  // Zoom automatically only when the set of orders changes (first load, a new
-  // tab or filter). A refresh, a removed pin or a new route order never moves the map.
-  const fitKey = useMemo(
-    () => placedOrders.map((order) => order.id).sort().join("|"),
-    [placedOrders],
-  );
+  // Zoom automatically only when an order appears that the map has not zoomed for
+  // yet (just added). A refresh, a removed pin or a new route order never moves the map.
   useEffect(() => {
-    if (!mapReady || !fitKey || lastFitKeyRef.current === fitKey) return;
-    lastFitKeyRef.current = fitKey;
-    fitRef.current();
-  }, [mapReady, fitKey]);
+    if (!mapReady) return;
+    const known = zoomedIdsRef.current;
+    const hasNew = placedOrders.some((order) => !known.has(order.id));
+    zoomedIdsRef.current = new Set(placedOrders.map((order) => order.id));
+    if (hasNew) fitRef.current();
+  }, [mapReady, placedOrders]);
 
   useEffect(() => {
     mapRef.current?.easeTo({
@@ -390,7 +391,9 @@ export function DispatchMap({ accessToken, orders }: DispatchMapProps) {
     ? roadRoute
       ? `${stops.length} stop${stops.length === 1 ? "" : "s"} · ${roadRoute.distanceKm.toFixed(1)} km · ${Math.round(roadRoute.durationMin)} min round trip`
       : `${stops.length} stop${stops.length === 1 ? "" : "s"} · about ${routeLengthKm(straightLine).toFixed(1)} km in a straight line`
-    : `${visibleOrders.length} order${visibleOrders.length === 1 ? "" : "s"} on the map`;
+    : orders.length === 0
+      ? "No orders on the map yet"
+      : `${placedOrders.length} order${placedOrders.length === 1 ? "" : "s"} on the map`;
 
   return (
     <s-section>
@@ -409,7 +412,7 @@ export function DispatchMap({ accessToken, orders }: DispatchMapProps) {
               className="dispatch-map__button"
               onClick={() => setRouteOn((value) => !value)}
               aria-pressed={routeOn}
-              disabled={!routeOn && visibleOrders.length === 0}
+              disabled={!routeOn && placedOrders.length === 0}
             >
               {routeOn ? "Clear route" : "Optimize route"}
             </button>
@@ -421,27 +424,28 @@ export function DispatchMap({ accessToken, orders }: DispatchMapProps) {
             >
               {isThreeDimensional ? "2D" : "3D"}
             </button>
+            <button
+              type="button"
+              className="dispatch-map__button"
+              onClick={onClearAll}
+              disabled={orders.length === 0}
+            >
+              Clear all
+            </button>
           </div>
         </s-stack>
 
+        {orders.length === 0 && (
+          <s-text color="subdued">
+            Tick orders in the table below, then press “Add to map”.
+          </s-text>
+        )}
         {mapError && <s-text tone="critical">{mapError}</s-text>}
         {isLookingUp && <s-text color="subdued">Finding delivery addresses…</s-text>}
         {unmappedOrderCount > 0 && (
           <s-text tone="critical">
             {unmappedOrderCount} order{unmappedOrderCount === 1 ? "" : "s"} could not be placed on the map. Check the shipping address.
           </s-text>
-        )}
-        {removedIds.size > 0 && (
-          <s-stack direction="inline" gap="small-200" alignItems="center">
-            <s-text color="subdued">{removedIds.size} removed from the map</s-text>
-            <button
-              type="button"
-              className="dispatch-map__button"
-              onClick={() => setRemovedIds(new Set())}
-            >
-              Restore
-            </button>
-          </s-stack>
         )}
         <div ref={containerRef} className="dispatch-map__canvas" aria-label="Delivery map" />
       </s-stack>

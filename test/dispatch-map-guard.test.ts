@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 
 const MAP_FILES = [
   "app/components/orders/DispatchMap.tsx",
+  "app/hooks/useMapOrders.ts",
   "app/lib/dispatch-map.ts",
   "app/lib/dispatch-route.ts",
   "app/lib/dispatch-geocode.ts",

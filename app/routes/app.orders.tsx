@@ -32,7 +32,7 @@ import {
   getDeliveryTimeValue,
   formatDeliveryDate,
 } from "../lib/order-utils";
-import { toDispatchMapOrder } from "../lib/dispatch-map";
+import { useMapOrders } from "../hooks/useMapOrders";
 import {
   useLoaderData,
   useNavigate,
@@ -1077,16 +1077,6 @@ function Extension() {
     return list;
   }, [orders, tabParam, dateRefs, sortParam, deliveryDateFilter, timeWindowParam]);
 
-  // The map receives this already-filtered table list, never a separate
-  // Shopify query, so both surfaces always describe the same dispatch work.
-  const dispatchMapOrders = useMemo(
-    () =>
-      displayedOrders
-        .map((order) => toDispatchMapOrder(order))
-        .filter((order): order is NonNullable<typeof order> => order !== null),
-    [displayedOrders],
-  );
-
   // ── Row selection — which orders are ticked in the table ───────────────────
 
   const {
@@ -1097,6 +1087,14 @@ function Extension() {
     clearSelection,
     removeSelectedResources,
   } = useRowSelection(displayedOrders, getOrderId);
+
+  // The delivery map shows only the orders the merchant ticked and added with the
+  // "Add to map" button. It reads the table's own orders, never a separate Shopify query.
+  const { mapOrders, addSelected, removeOrder, clearMap } = useMapOrders(
+    orders,
+    displayedOrders,
+    selectedResources,
+  );
 
   // Removes selected ids that are no longer in the displayed list (after a filter, tab, page or
   // refresh change).
@@ -2083,7 +2081,9 @@ function Extension() {
           </s-stack>
           <DispatchMap
             accessToken={loaderData.mapboxPublicToken}
-            orders={dispatchMapOrders}
+            orders={mapOrders}
+            onRemoveOrder={removeOrder}
+            onClearAll={clearMap}
           />
           <s-section padding="none">
             <OrdersIndexTable
@@ -2117,6 +2117,7 @@ function Extension() {
               onOpenOrder={openOrderPanel}
               onShowTags={(orderId) => setTagsModalOrderId(orderId)}
               onOpenBulkModal={openModal}
+              onAddToMap={addSelected}
               newOrderIds={newOrderIds}
               changedOrderIds={changedOrderIds}
             />

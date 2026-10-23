@@ -93,6 +93,42 @@ export function buildPopupText(order: Order): string {
   return joinParts([who, when], ". ");
 }
 
+/**
+ * Adds the ticked orders to the orders already on the map. New ones are added in
+ * table order after the ones already there; an order that is already on the map
+ * keeps its place. Nothing is added from outside the table's current list.
+ */
+export function addSelectedToMap(
+  onMap: Order[],
+  displayed: Order[],
+  selectedIds: readonly string[],
+): Order[] {
+  const present = new Set(onMap.map((order) => order.id));
+  const selected = new Set(selectedIds);
+  const added = displayed.filter(
+    (order) => selected.has(order.id) && !present.has(order.id),
+  );
+  return added.length > 0 ? [...onMap, ...added] : onMap;
+}
+
+/** Takes one order off the map. */
+export function removeFromMap(onMap: Order[], orderId: string): Order[] {
+  return onMap.filter((order) => order.id !== orderId);
+}
+
+/**
+ * Turns the orders on the map into map input. If the loaded page has a newer copy
+ * of an order (after a refresh or an edit), that copy is used; otherwise the copy
+ * saved when it was added, so an order stays on the map when the table filter changes.
+ */
+export function resolveMapOrders(onMap: Order[], loaded: Order[]): DispatchMapOrder[] {
+  const latest = new Map(loaded.map((order) => [order.id, order]));
+  return onMap.flatMap((order) => {
+    const mapOrder = toDispatchMapOrder(latest.get(order.id) ?? order);
+    return mapOrder ? [mapOrder] : [];
+  });
+}
+
 /** Normalizes address text so one address gets one geocoding cache key. */
 export function normalizeDispatchAddress(order: Order): string {
   const address = order.shippingAddress;

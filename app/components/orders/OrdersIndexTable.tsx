@@ -96,6 +96,8 @@ export interface OrdersIndexTableProps {
   onOpenOrder: (orderId: string) => void;
   onShowTags: (orderId: string) => void;
   onOpenBulkModal: (name: BulkModalName) => void;
+  /** Puts the ticked orders on the delivery map. The button is hidden when this is not given. */
+  onAddToMap?: () => void;
   // Orders that appeared or changed schedule since the last refresh of the same view. They
   // get a small badge until the notice banner is dismissed.
   newOrderIds?: ReadonlySet<string>;
@@ -155,6 +157,7 @@ export function OrdersIndexTable({
   onOpenOrder,
   onShowTags,
   onOpenBulkModal,
+  onAddToMap,
   newOrderIds,
   changedOrderIds,
 }: OrdersIndexTableProps) {
@@ -262,6 +265,11 @@ export function OrdersIndexTable({
   const bulkBarMarkup = (
     <s-stack direction="inline" gap="small-200" alignItems="center">
       <s-text fontWeight="semibold">{selectedCount} selected</s-text>
+      {onAddToMap && (
+        <s-button variant="primary" onClick={onAddToMap}>
+          Add to map
+        </s-button>
+      )}
       <s-button
         disabled={flag(isSubmitting)}
         onClick={() => onOpenBulkModal("reschedule")}

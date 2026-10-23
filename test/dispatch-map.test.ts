@@ -4,8 +4,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  addSelectedToMap,
   buildPopupText,
   normalizeDispatchAddress,
+  removeFromMap,
+  resolveMapOrders,
   toDispatchMapOrder,
 } from "../app/lib/dispatch-map";
 import type { Order } from "../app/lib/order-utils";
@@ -168,5 +171,41 @@ describe("map position from Shopify", () => {
       });
       expect(placed?.coordinates).toBeNull();
     }
+  });
+});
+
+// "Add to map": only the ticked rows go on the map, and they stay when the table filter changes.
+describe("orders on the map", () => {
+  const make = (number: number): Order => ({
+    ...order,
+    id: `gid://shopify/Order/${number}`,
+    name: `#${number}`,
+  });
+  const [a, b, c] = [make(1), make(2), make(3)];
+
+  it("adds only the ticked rows, in table order", () => {
+    expect(addSelectedToMap([], [a, b, c], [c.id, a.id]).map((o) => o.name)).toEqual(["#1", "#3"]);
+  });
+
+  it("keeps the place of orders already on the map and adds the new ones after", () => {
+    const onMap = addSelectedToMap([], [a, b, c], [b.id]);
+    expect(addSelectedToMap(onMap, [a, b, c], [a.id, b.id]).map((o) => o.name)).toEqual([
+      "#2",
+      "#1",
+    ]);
+  });
+
+  it("adds nothing for ids that are not in the table's list", () => {
+    expect(addSelectedToMap([], [a], ["gid://shopify/Order/999"])).toEqual([]);
+  });
+
+  it("removes one order from the map", () => {
+    expect(removeFromMap([a, b, c], b.id).map((o) => o.name)).toEqual(["#1", "#3"]);
+  });
+
+  it("keeps an order on the map after it leaves the table list, and prefers the newer copy", () => {
+    const newerB = { ...b, name: "#2-edited" };
+    const result = resolveMapOrders([a, b], [newerB]);
+    expect(result.map((o) => o.orderNumber)).toEqual(["#1", "#2-edited"]);
   });
 });
