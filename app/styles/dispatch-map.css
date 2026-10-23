@@ -34,7 +34,7 @@
   block-size: 30px;
   border: 2px solid #fff;
   border-radius: 50%;
-  background: var(--marker-color);
+  background: var(--marker-color, #2563eb);
   box-shadow: 0 1px 4px rgb(15 23 42 / 45%);
   color: #fff;
   font-weight: 700;
