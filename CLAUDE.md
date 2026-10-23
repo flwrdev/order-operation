@@ -24,8 +24,8 @@ The database behind `DATABASE_URL` and `DIRECT_DATABASE_URL` had no applied migr
 
 - Every endpoint is verified by Shopify: webhook HMAC, app-proxy signature, or session token. There are no internal endpoints with their own secrets and no pollers. Merchant: "dapat ang mga verification ay ang external logical na may shopify-Hmac at hindi ang internal logic."
 - Google Cloud project `jhay-510919` has one Cloud Run service, `delivery-scheduler`, scaled to zero (`min-instances 0`). It has no Cloud Scheduler job and no Cloud Tasks queue; neither API is enabled (checked 2026-10-12).
-- `orders/create` writes the delivery metafields and the schedule tags inline, and answers 500 on a failed step so Shopify redelivers.
-- The schedule tags are the bare date and slot (`2026-10-03`, `9AM-12PM`). The app writes them on `orders/create` and on every reschedule. No Shopify Flow writes them: every delivery-tag workflow in Flow is inactive, and "Tag orders with delivery date and time" was turned off on 2026-05-01 (checked 2026-10-02). The Orders page date tabs and date filter search by these tags, and the merchant's Shopify Orders list, order email notifications and analytics use them. Merchant (2026-10-02): "kung babaguhin mo ang order tag ay pwede masira date picker logic kaya dahilan ng pa sulat pa ng app ng order tag" and "yung tag ginagamit ko sa automate sa ibang paraan … tulad ng mga order email notification at ibang analytics na sa order tag bumabase."
+- The `orders/create` webhook was removed from the code and the toml on 2026-10-23 (merchant decision) but is not deployed yet. Shopify Flow is planned to write the schedule tags and `custom.date` / `custom.time_slot` for new orders; deploy only after Flow does that.
+- The schedule tags are the bare date and slot (`2026-10-03`, `9AM-12PM`). The app writes them on every reschedule (for a new order, Shopify Flow once it is set up). No Shopify Flow writes them: every delivery-tag workflow in Flow is inactive, and "Tag orders with delivery date and time" was turned off on 2026-05-01 (checked 2026-10-02). The Orders page date tabs and date filter search by these tags, and the merchant's Shopify Orders list, order email notifications and analytics use them. Merchant (2026-10-02): "kung babaguhin mo ang order tag ay pwede masira date picker logic kaya dahilan ng pa sulat pa ng app ng order tag" and "yung tag ginagamit ko sa automate sa ibang paraan … tulad ng mga order email notification at ibang analytics na sa order tag bumabase."
 - Slot capacity limits are on only for Valentine's Day and Mother's Day. Merchant (2026-10-02): "no capacity yet and its intentional because the capacity is for valentine and mothersday only.. at hindi ito napupuno sa totoong buhay."
 - Postgres (`neondb`) holds only `Session`, `DeliveryScheduleConfig`, `EmailSendLog`, and `_prisma_migrations`.
 - Removed on merchant request: Lalamove tracking (poll, webhook, Order ID field, table), the delivery-sync queue and hourly sweep, bulk-action jobs, and the COD Settings page. Bulk actions run inline, 10 orders at most.
@@ -51,7 +51,8 @@ The database behind `DATABASE_URL` and `DIRECT_DATABASE_URL` had no applied migr
 | `test` | unit tests (vitest) |
 
 Where to look first
-- A new order arrives: `app/routes/webhooks.orders.create.ts`.
+- A new order arrives: no route in this app after the `orders/create` removal is deployed (see `docs/architecture.md`).
+- The Orders page map (incomplete feature): `app/components/orders/DispatchMap.tsx` and `app/lib/dispatch-*.ts`.
 - What the storefront can book, validate and reschedule: `app/routes/apps.schedule-rules*.ts` (app proxy) and `app/services/delivery-bookings.server.ts`.
 - The Orders page: `app/routes/app.orders.tsx`; its 20-minute refresh: `app/hooks/useSmartRefresh.ts`.
 - The Scheduler (rules) page: `app/routes/app.scheduler.tsx`.

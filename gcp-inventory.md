@@ -59,6 +59,8 @@ All ten secrets are readable by `delivery-scheduler-runtime` (`roles/secretmanag
 ## Plain environment variables on the service
 `SHOPIFY_API_KEY` (`192d50677bb4239697e25fd7ad097c50`), `SHOPIFY_APP_URL` (`https://delivery-scheduler-1030649952056.us-central1.run.app`), `SHOP_DOMAIN` (`hsrwva-nr.myshopify.com`), `SCOPES`. `SHOP_CUSTOM_DOMAIN` is unset.
 
+`MAPBOX_PUBLIC_TOKEN` is read by the Orders page for the delivery map. It is **not set on the service yet** (written 2026-10-23, before the map is deployed): without it the map only shows a "set `MAPBOX_PUBLIC_TOKEN`" note. It is a plain environment variable and not a secret, because the browser receives it. Use a Mapbox public token (`pk.`) with URL restrictions to the Cloud Run URL above, and never an `sk.` token.
+
 ## Artifact Registry
 Repository `cloud-run-source-deploy` (docker, standard, `us-central1`). Cleanup policy: keep the 2 most recent versions, delete the rest.
 
