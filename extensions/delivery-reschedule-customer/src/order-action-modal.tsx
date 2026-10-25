@@ -35,6 +35,7 @@ export default async function renderRescheduleModal() {
     minDate,
     maxDate: getMaxSelectableDate(fallbackRules, minDate),
     disallowDates: '' as string,
+    isBlocked: false,
   };
 
   // The action shell, the form fields and the buttons are built ONCE and then
@@ -56,6 +57,14 @@ export default async function renderRescheduleModal() {
 const APP_BASE_URL = 'https://delivery-scheduler-1030649952056.us-central1.run.app';
 const SCHEDULE_RULES_URL = `${APP_BASE_URL}/public/customer-account/schedule-rules`;
 const RESCHEDULE_URL = `${APP_BASE_URL}/public/customer-account/reschedule`;
+
+// Server answers that mean "this order can no longer be rescheduled online".
+// Picking a different date will not help, so the modal locks instead of retrying.
+const TERMINAL_RESCHEDULE_CODES = new Set([
+  'already_rescheduled_once',
+  'order_already_fulfilled',
+  'current_delivery_date_too_close_or_past',
+]);
 
 function formatDisplayDate(isoDate: string): string {
   const [y, m, d] = isoDate.split('-').map(Number);
@@ -86,6 +95,7 @@ type RescheduleState = {
   minDate: string;
   maxDate: string;
   disallowDates: string;
+  isBlocked: boolean;
 };
 
 type ShopifyActionApi = {
@@ -277,7 +287,7 @@ function buildRescheduleView(
     setBooleanAttribute(
       dateField,
       'disabled',
-      state.isLoadingRules || state.isSubmitting,
+      state.isLoadingRules || state.isSubmitting || state.isBlocked,
     );
     setOptionalAttribute(dateField, 'error', state.dateError);
     setElementValue(dateField, state.date);
@@ -296,7 +306,7 @@ function buildRescheduleView(
 
     const isBusy = state.isSubmitting || state.isLoadingRules;
     setBooleanAttribute(confirmButton, 'loading', isBusy);
-    setBooleanAttribute(confirmButton, 'disabled', isBusy);
+    setBooleanAttribute(confirmButton, 'disabled', isBusy || state.isBlocked);
   };
 
   return { action, update };
@@ -307,6 +317,12 @@ async function submitReschedule(
   shopifyApi: ShopifyActionApi,
   rerender: () => void,
 ) {
+  // Ignore a second click while the first request is still running, and ignore
+  // clicks once the server has said this order is closed for online changes.
+  if (state.isSubmitting || state.isBlocked) {
+    return;
+  }
+
   let hasError = false;
 
   // Keep the local form checks aligned with the server rules so we can block empty
@@ -374,9 +390,13 @@ async function submitReschedule(
 
     const responseBody = (await response.json().catch(() => ({}))) as RescheduleErrorBody;
     if (!response.ok) {
-      if (response.status === 422) {
+      if (responseBody.code && TERMINAL_RESCHEDULE_CODES.has(responseBody.code)) {
+        // Show the server's message as an error and lock the form.
+        state.isBlocked = true;
+        state.submitError = responseBody.error ?? `Request failed (${response.status})`;
+      } else if (response.status === 422) {
         applyRuleValidationFailure(state, {
-          code: responseBody.code,
+          code: responseBody.code as DeliverySelectionValidationCode | undefined,
           message: responseBody.error ?? `Request failed (${response.status})`,
           availableSlots: parseAvailableSlots(responseBody.availableSlots),
           minDate: responseBody.minDate,
@@ -393,8 +413,11 @@ async function submitReschedule(
     state.confirmedDate = state.date;
     state.confirmedSlot = state.timeSlot;
   } catch (error) {
+    // A failed fetch throws a TypeError with a technical message; show plain words instead.
     state.submitError =
-      (error as Error).message ?? 'Something went wrong. Please try again.';
+      error instanceof TypeError
+        ? 'We could not reach the server. Please check your connection and try again.'
+        : ((error as Error).message ?? 'Something went wrong. Please try again.');
   } finally {
     state.isSubmitting = false;
     rerender();
@@ -557,7 +580,7 @@ function getTimeSlotPlaceholder(state: RescheduleState) {
 
 type RescheduleErrorBody = {
   error?: string;
-  code?: DeliverySelectionValidationCode;
+  code?: string;
   minDate?: string;
   maxDate?: string;
   availableSlots?: unknown;
