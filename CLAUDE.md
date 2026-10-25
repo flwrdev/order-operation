@@ -71,6 +71,8 @@ Where to look first
 
 #Hard Rules - Huwag galawin ang tag, attribute, fulfillment, metafield, o ang ibang umiiral na flow
 
+- Nothing changes in the current behavior of the business without the merchant's approval (2026-10-25: "walang mag babago sa current behaviour ng business ng walang approval ko"). This covers what customers see and can do, the schedule rules, tags, metafields, attributes, fulfillment, emails, scopes and the Shopify Flow workflows. Show the exact change and wait for "approved" before making it.
+
 
 
 ## Comments in code
