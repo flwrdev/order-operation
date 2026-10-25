@@ -9,8 +9,12 @@ npm test                  # vitest: test/**/*.test.{ts,tsx}
 npm run test:extensions   # vitest: extensions/*/tests/**/*.test.{ts,tsx}
 npm run setup             # prisma generate && prisma migrate deploy
 npm run deploy:prod       # app config + extensions to the PROD app (explicit go required)
-gcloud run deploy delivery-scheduler --source . --region us-central1 --project jhay-510919 --service-account delivery-scheduler-runtime@jhay-510919.iam.gserviceaccount.com   # backend (explicit go required); secrets and env vars stay on the service, see docs/gcp-inventory.md
+gcloud run deploy delivery-scheduler --source . --region us-central1 --project jhay-510919 --service-account delivery-scheduler-runtime@jhay-510919.iam.gserviceaccount.com   # backend (explicit go required); secrets and env vars stay on the service
 ```
+
+`npm run dev` uses the production app config. With `automatically_update_urls_on_dev = true` it would repoint the production URLs to a tunnel, so keep that flag `false` and test with `npx shopify app dev --config shopify.app.production.toml --no-update`. The extensions have the Cloud Run URL hard-coded, so a submit in the preview writes to the real order: use a test order.
+
+Extension code (`extensions/*`) and `shopify.app.production.toml` ship with `npm run deploy:prod` (Shopify). Code under `app/` ships with the `gcloud run deploy` command (Cloud Run). A change to only one of them needs only that deploy.
 
 After creating or pulling a Prisma migration, state that `npm run setup` must run before the next `npm run dev`.
 
@@ -23,18 +27,25 @@ The database behind `DATABASE_URL` and `DIRECT_DATABASE_URL` had no applied migr
 ## Current shape (merchant decisions, 2026-09-25 unless noted)
 
 - Every endpoint is verified by Shopify: webhook HMAC, app-proxy signature, or session token. There are no internal endpoints with their own secrets and no pollers. Merchant: "dapat ang mga verification ay ang external logical na may shopify-Hmac at hindi ang internal logic."
-- Google Cloud project `jhay-510919` has one Cloud Run service, `delivery-scheduler`, scaled to zero (`min-instances 0`). It has no Cloud Scheduler job and no Cloud Tasks queue; neither API is enabled (checked 2026-10-12).
+- Google Cloud project `jhay-510919` has one Cloud Run service, `delivery-scheduler`, scaled to zero (`min-instances 0`). The Cloud Scheduler API is enabled (`docs/gcp-baseline-2026-10-24.md`, 46 APIs); whether any Scheduler job exists was not checked. Cloud Tasks is not in the enabled list.
 - The `orders/create` webhook was removed from the code and the toml on 2026-10-23 (merchant decision) but is not deployed yet. Shopify Flow is planned to write the schedule tags and `custom.date` / `custom.time_slot` for new orders; deploy only after Flow does that.
 - The schedule tags are the bare date and slot (`2026-10-03`, `9AM-12PM`). The app writes them on every reschedule (for a new order, Shopify Flow once it is set up). No Shopify Flow writes them: every delivery-tag workflow in Flow is inactive, and "Tag orders with delivery date and time" was turned off on 2026-05-01 (checked 2026-10-02). The Orders page date tabs and date filter search by these tags, and the merchant's Shopify Orders list, order email notifications and analytics use them. Merchant (2026-10-02): "kung babaguhin mo ang order tag ay pwede masira date picker logic kaya dahilan ng pa sulat pa ng app ng order tag" and "yung tag ginagamit ko sa automate sa ibang paraan … tulad ng mga order email notification at ibang analytics na sa order tag bumabase."
 - Slot capacity limits are on only for Valentine's Day and Mother's Day. Merchant (2026-10-02): "no capacity yet and its intentional because the capacity is for valentine and mothersday only.. at hindi ito napupuno sa totoong buhay."
 - Postgres (`neondb`) holds only `Session`, `DeliveryScheduleConfig`, `EmailSendLog`, and `_prisma_migrations`.
 - Removed on merchant request: Lalamove tracking (poll, webhook, Order ID field, table), the delivery-sync queue and hourly sweep, bulk-action jobs, and the COD Settings page. Bulk actions run inline, 10 orders at most.
-- The COD fee system was removed on merchant request (2026-10-20): the `cod-eligibility` function, the `cod-fee-notice` extension, the COD part of `delivery-thank-you`, and the code that added the fee line item. The `COD-FEE` SKU product in Shopify and old orders that already carry a fee line were not touched.
+- The COD fee system was removed on merchant request (2026-10-20): the `cod-eligibility` function, the `cod-fee-notice` extension, the COD part of `delivery-thank-you`, and the code that added the fee line item. The `COD-FEE` SKU product in Shopify and old orders that already carry a fee line were not touched. Confirmed in git: commit `c8338c9`. The deleted extension and function stay in Shopify until the next `npm run deploy:prod`.
 - Orders page auto-refreshes every 20 minutes on every view, and the mailbox is read again after each refresh.
 - Incoming customer email is read from the Private Email mailbox over IMAP, read-only, only during a request: Orders page load, Refresh, opening the bell, and opening an order panel. There is no IDLE connection and no poller. IMAP reuses `EMAIL_SMTP_USER`/`EMAIL_SMTP_PASSWORD`; `EMAIL_IMAP_HOST` and `EMAIL_IMAP_PORT` are optional.
 - Email state lives in Shopify, not Postgres: `$app.email_reply_seen_at` (order metafield, date_time) and `$app.quick_replies` (shop metafield, json, edited on the Delivery Scheduler page).
 - The `flowercart_marketing` database on `production` stays, for safe storage with no access by anyone else. It is written from outside this repo. Do not modify or delete it.
 - Before any deploy, push to `main`, or database write, show the exact command or change and wait for the merchant (2026-09-26: "ipakita mo muna saakin yung exact command").
+
+## Docs
+
+- `docs/gcp-baseline-2026-10-24.md`: Cloud Run, IAM, secrets, APIs (console snapshot).
+- `docs/architecture-audit-2026-10-24.md`: Orders page, scheduler, map, customer reschedule flow.
+- `docs/extensions-audit-2026-10-24.md`: extensions and the customer-account routes.
+- `docs/runbook.md`: deploy steps, dev test, errors seen.
 
 ## Code map
 
@@ -51,13 +62,12 @@ The database behind `DATABASE_URL` and `DIRECT_DATABASE_URL` had no applied migr
 | `test` | unit tests (vitest) |
 
 Where to look first
-- A new order arrives: no route in this app after the `orders/create` removal is deployed (see `docs/architecture.md`).
+- A new order arrives: no route in this app after the `orders/create` removal is deployed.
 - The Orders page map (incomplete feature): `app/components/orders/DispatchMap.tsx` and `app/lib/dispatch-*.ts`.
 - What the storefront can book, validate and reschedule: `app/routes/apps.schedule-rules*.ts` (app proxy) and `app/services/delivery-bookings.server.ts`.
 - The Orders page: `app/routes/app.orders.tsx`; its 20-minute refresh: `app/hooks/useSmartRefresh.ts`.
 - The Scheduler (rules) page: `app/routes/app.scheduler.tsx`.
 - Customer email: `app/services/customer-inbox.server.ts` (reads the mailbox) and `app/routes/app.orders_.inbox.ts` (what the bell loads).
-- Secrets and settings on Cloud Run: `docs/gcp-inventory.md`.
 
 #Hard Rules - Huwag galawin ang tag, attribute, fulfillment, metafield, o ang ibang umiiral na flow
 

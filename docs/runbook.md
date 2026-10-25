@@ -1,6 +1,6 @@
 # Runbook
 
-Checked 2026-10-12. Resource names, principals, roles and the secret list are in [gcp-inventory.md](gcp-inventory.md). Secret values are never recorded.
+Checked 2026-10-12; the API list and the Cloud Run revision were checked 2026-10-24 (see `gcp-baseline-2026-10-24.md`). Secret values are never recorded.
 
 ## What runs where
 - Shopify app: Dev Dashboard app `delivery-scheduler`, store `hsrwva-nr.myshopify.com`. `shopify.app.production.toml` is the app configuration.
@@ -28,10 +28,19 @@ shopify app deploy --config shopify.app.production.toml --allow-updates
 ```
 Check: Dev Dashboard > Apps > delivery-scheduler > Versions shows a new Active version whose `application_url` is the Cloud Run URL.
 
+This command ships every extension and the whole toml at once (webhooks, scopes, app proxy). A change under `extensions/` needs only this deploy; a change under `app/` needs only the Cloud Run deploy above.
+
 If the Cloud Run URL changes, edit it in `shopify.app.production.toml` (`application_url`, `redirect_urls`, `app_proxy`) and in the `APP_BASE_URL` constants of `extensions/delivery-date-editor/src/index.tsx` and `extensions/delivery-reschedule-customer/src/order-action-modal.tsx` (and its test), then deploy both. `SHOPIFY_API_KEY` on Cloud Run must equal the `client_id` in the toml.
 
 ## Verify after a deploy
 Open the app from the store admin. `/app/orders` and `/app/scheduler` should load.
+
+## Test in the dev server
+From the repo folder, with `automatically_update_urls_on_dev = false` in the toml:
+```
+npx shopify app dev --config shopify.app.production.toml --no-update
+```
+Do not run `npm run dev` with that flag `true`: it repoints the production `application_url`, redirects and app proxy to a tunnel. The extensions have the Cloud Run URL hard-coded, so Confirm in the preview writes to the real order. Use a test order that is unfulfilled, has no `resched` tag, and has `custom.date` and `custom.time_slot` several days ahead. An order without a valid `custom.date` is answered with `current_delivery_date_too_close_or_past`.
 
 ## Errors seen and their cause
 | Error | Cause |
@@ -65,7 +74,7 @@ gcloud secrets versions access latest --secret=NAME --project jhay-510919 | tr -
 ```
 
 ## Components and APIs
-- Google Cloud APIs enabled for this work: `run`, `cloudbuild`, `artifactregistry`, `iam`, `secretmanager`, `billingbudgets`.
+- 46 Google Cloud APIs are enabled; the list is in `gcp-baseline-2026-10-24.md`.
 - Shopify Admin GraphQL (`2026-04`), Shopify Storefront API (token), Google Maps JavaScript SDK and Places API (New) in the browser (optional key), SMTP and IMAP on the Private Email mailbox, Neon Postgres through Prisma.
 - Routes: `app.*` use the Shopify session; `apps.schedule-rules.*` use the app proxy signature; `public.customer-account.*` verify the customer-account session token with `SHOPIFY_API_SECRET`; `webhooks.*` verify the webhook HMAC.
 - Extensions: `delivery-thank-you`, `delivery-date-editor`, `delivery-reschedule-customer`, `delivery-reschedule-action`, `order-delivery-block`, `delivery-fee-checker` (theme).

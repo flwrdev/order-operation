@@ -104,6 +104,7 @@ Ang `dev.map-preview.tsx` ay para sa dev lang at hindi dapat ma-deploy.
 
 ## 8. Config sa Cloud Run (2026-10-24, mula sa console)
 - 14 na env var. Wala ang `MAPBOX_PUBLIC_TOKEN`, `META_PAGE_ID` at `MESSENGER_PAGE_ID`. Dahil dito, sa live ay laging naka-disable ang "Open Messenger conversation".
+- Revision na may 100% traffic: `delivery-scheduler-00009-bw2` (deployed 2026-10-21, max instances 2).
 - Detalye: `docs/gcp-baseline-2026-10-24.md`.
 
 ## 9. Mga komentong hindi tugma sa code
@@ -130,4 +131,13 @@ Ang `dev.map-preview.tsx` ay para sa dev lang at hindi dapat ma-deploy.
 - Ang live app ang source of truth, hindi ang repo.
 
 ## 12. Hindi pa nababasa
-`services/bulk-actions.server.ts`, `services/scheduler-ops.server.ts`, `services/schedule-rules.server.ts`, `services/customer-inbox.server.ts`, `services/send-customer-email.server.ts`, `lib/scheduler-overview.ts`, `lib/quick-replies.ts`, `lib/recent-reschedules.ts`, `lib/order-tags.ts`, `app.schedule-rules.tsx`, `app.scheduler_.quick-replies.ts`, ang pagkakabit ng mga modal sa `app.orders.tsx`, ang buong delivery map, at ang mga extension.
+`services/bulk-actions.server.ts`, `services/scheduler-ops.server.ts`, `services/schedule-rules.server.ts`, `services/customer-inbox.server.ts`, `services/send-customer-email.server.ts`, `lib/scheduler-overview.ts`, `lib/quick-replies.ts`, `lib/recent-reschedules.ts`, `lib/order-tags.ts`, `app.schedule-rules.tsx`, `app.scheduler_.quick-replies.ts`, ang pagkakabit ng mga modal sa `app.orders.tsx`, at ang buong delivery map. Ang mga extension ay nasa `docs/extensions-audit-2026-10-24.md`. Ang `services/reschedule-order-delivery.server.ts` ay hindi pa nababasa.
+
+## 13. Customer reschedule (daloy)
+Detalye: `docs/extensions-audit-2026-10-24.md`, seksyon 3.4 at 4.
+1. Binubuksan ng customer ang order sa customer account at pini-click ang "Reschedule Delivery" (`extensions/delivery-reschedule-customer`, menu item at modal).
+2. Ang modal ay tumatawag sa `POST /public/customer-account/schedule-rules` para sa rules at bilang ng booking (hindi kasama ang booking ng order mismo).
+3. Pagkatapos pumili ng petsa at slot, `POST /public/customer-account/reschedule`. Ang dalawang route ay bini-verify ang session token gamit ang `SHOPIFY_API_SECRET` at tumatanggap lang ng Origin na `https://extensions.shopifycdn.com`.
+4. Bago magsulat, tinitingnan ng reschedule route ang may-ari ng order, fulfillment status, ang tag na `resched`, at kung masyadong malapit ang kasalukuyang petsa. Ang pagsulat ay sa `services/reschedule-order-delivery.server.ts`.
+5. Naka-hardcode ang Cloud Run URL sa modal (`APP_BASE_URL`).
+6. Ang pagbabago sa modal ay lumalabas sa customer pagkatapos ng Shopify deploy. Ang pagbabago sa mga route ay pagkatapos ng Cloud Run deploy.

@@ -1,18 +1,18 @@
 # Audit ng mga extension (2026-10-24)
 
 Ano ito: ulat mula sa pagbasa ng code ng mga extension at ng mga backend route na tinatawag nila.
-Pinagmulan: `C:\Staging\delivery-scheduler`, branch `feature/orders-delivery-map`. Read-only, walang binago.
+Pinagmulan: `C:\Staging\delivery-scheduler`, branch `feature/orders-delivery-map`. Read-only ang audit; ang binago pagkatapos nito ay nasa seksyon 8.
 Hindi pa nakumpirma sa live. Ang live app ang source of truth.
 
 ## 1. COD fee
 - Walang COD fee extension sa repo. Anim lang ang extension sa `extensions/` at wala sa kanila ang may COD.
 - Hinanap sa buong repo (hindi kasama ang `node_modules`, `dist`, `build`, `.react-router`). Walang COD code na natira sa `app` o `extensions`.
-- Ang `CLAUDE.md` ng repo (linya 32) ay nagsasabing inalis noong 2026-10-20: ang function na `cod-eligibility`, ang extension na `cod-fee-notice`, ang COD part ng `delivery-thank-you`, at ang code na nagdadagdag ng fee line. Hindi ginalaw ang produktong `COD-FEE` at ang mga lumang order na may fee line. Ito ay ayon sa dokumento, hindi code-verified.
+- Ang `CLAUDE.md` ng repo (linya 32) ay nagsasabing inalis noong 2026-10-20: ang function na `cod-eligibility`, ang extension na `cod-fee-notice`, ang COD part ng `delivery-thank-you`, at ang code na nagdadagdag ng fee line. Hindi ginalaw ang produktong `COD-FEE` at ang mga lumang order na may fee line. Nakumpirma sa git (2026-10-25): commit `c8338c9` (2026-10-21, PR #8) ang nag-alis ng `cod-eligibility`, `cod-fee-notice` at ng COD part ng `delivery-thank-you`. Ang mga ito ay nasa Shopify pa hanggang sa susunod na `npm run deploy:prod`.
 - Natirang sanggunian: ang mga column na `needsCodFee` at `codFeeDone` sa migration `20260826000000_add_delivery_sync_task`. Hindi pa nakikita kung dinrop ang table na iyon.
 - Posibleng nasa live pa: ang pagtanggal ay nasa repo lang hanggang ma-deploy sa Shopify. Ang `SCOPES` sa Cloud Run ay may `write_order_edits`, `write_products` at `write_payment_customizations`. Ang `shopify.app.production.toml` ay wala ng tatlong iyon at may `read_products` na wala sa Cloud Run. Hindi masabi mula sa code kung ang `cod-eligibility` ay nasa Shopify pa.
 
 ## 2. Listahan ng file at linya
-44 file, 3,220 linya, hindi kasama ang `dist`.
+44 file, 3,243 linya (3,220 bago ang commit `62b72e1`), hindi kasama ang `dist`.
 
 | Extension | File | Linya |
 |---|---|---|
@@ -36,7 +36,7 @@ Hindi pa nakumpirma sa live. Ang live app ang source of truth.
 | | `tsconfig.json` | 14 |
 | | `package.json` | 11 |
 | | `locales/en.default.json` | 1 |
-| delivery-reschedule-customer | `src/order-action-modal.tsx` | 667 |
+| delivery-reschedule-customer | `src/order-action-modal.tsx` | 690 (667 bago ang commit `62b72e1`) |
 | | `src/order-action-menu-item.tsx` | 9 |
 | | `tests/order-action-modal.test.ts` | 355 |
 | | `shopify.extension.toml` | 19 |
@@ -112,7 +112,9 @@ Iba pa:
 - Kapag pumalya ang pagkuha ng rules, gumagamit ito ng `DEFAULT_DELIVERY_SCHEDULE_RULES`.
 - Ang teksto ay nagsasabing isang beses lang puwedeng mag-reschedule online.
 - Pagkatapos ng tagumpay, ipinapakita ang kumpirmasyon gamit ang mga halagang kasasave lang, nang hindi hinihintay ang pag-refresh ng page.
-
+- Hindi tumatanggap ng pangalawang Confirm habang may tumatakbong request.
+- Kapag 422 na `already_rescheduled_once`, `order_already_fulfilled` o `current_delivery_date_too_close_or_past`, ipinapakita ang mensahe ng server bilang error at naka-lock ang date field at ang Confirm (`isBlocked`).
+- Kapag walang koneksyon, ang mensahe ay "We could not reach the server. Please check your connection and try again."
 ### 3.5 delivery-thank-you ("Thank You Delivery Schedule")
 - Target: `purchase.thank-you.block.render`. Mga metafield na naka-declare: `custom.date`, `custom.time_slot`. Walang naka-declare na capability.
 - Isang card na may petsa (`en-PH`, mahaba) at time slot.
@@ -133,7 +135,7 @@ Iba pa:
 4. Mga harang:
    - Fulfillment status na `FULFILLED`, `PARTIALLY_FULFILLED`, `IN_PROGRESS` o `SCHEDULED` (422, `order_already_fulfilled`).
    - Ang tag na `resched` (422, `already_rescheduled_once`).
-   - Ang kasalukuyang petsa ng delivery ay masyadong malapit, lipas, o wala (422, `current_delivery_date_too_close_or_past`).
+   - Ang kasalukuyang petsa ng delivery ay masyadong malapit, lipas, o wala (422, `current_delivery_date_too_close_or_past`). Sarado kapag wala o hindi `YYYY-MM-DD` ang petsa (galing sa `custom.date` o sa attribute na `Delivery Date`), mas maaga kaysa sa `getMinSelectableDate`, o lampas na ang oras ng huling order ng slot (simula ng slot minus `prepHours`). Tingnan ang `canRescheduleDelivery`, `lib/delivery-availability.ts:283`.
 5. Bina-validate ang bagong petsa at slot ayon sa rules at sa bilang ng booking, na hindi kasama ang sariling booking ng order (422 kapag bigo).
 6. Binabasa muli ang fulfillment status at ang tag bago magsulat.
 7. Isinusulat sa `rescheduleOrderDelivery` (source `customer`). Ang sagot ay laging `rescheduleStatus: "confirmed"`, may `deliveryAttributeSync`, `deliveryTagSync` at `rescheduleHistorySync`.
@@ -152,8 +154,8 @@ Ang `public.customer-account.order-delivery.ts` ay may parehong pag-verify ng to
 | # | Flag | Saan |
 |---|---|---|
 | 1 | Laging nakikita ng customer ang "Reschedule Delivery" sa menu, kahit nag-reschedule na o naka-fulfill na ang order. Sa pagsumite lang lumalabas ang error | `order-action-menu-item.tsx`, `public.customer-account.reschedule.ts:441-467` |
-| 2 | Kapag pumalya ang pagkuha ng rules, gumagamit ang modal ng default na rules, kaya baka mali ang slot at petsa na nakikita ng customer. Ang server pa rin ang bahala sa validation sa pagsumite | `order-action-modal.tsx:404-421` |
-| 3 | Naka-hardcode ang URL ng Cloud Run sa dalawang extension | `delivery-date-editor/src/index.tsx:179`, `order-action-modal.tsx:56` |
+| 2 | Kapag pumalya ang pagkuha ng rules, gumagamit ang modal ng default na rules, kaya baka mali ang slot at petsa na nakikita ng customer. Ang server pa rin ang bahala sa validation sa pagsumite | `order-action-modal.tsx:427-444` |
+| 3 | Naka-hardcode ang URL ng Cloud Run sa dalawang extension | `delivery-date-editor/src/index.tsx:179`, `order-action-modal.tsx:57` |
 | 4 | Ang `schedule-rules` route ay hindi tinitingnan ang may-ari ng order at hindi iniko-convert ang `orderId` sa gid. Ang reschedule route ay ginagawa ang dalawa | `public.customer-account.schedule-rules.ts:199-201`, `public.customer-account.reschedule.ts:393-395,437` |
 | 5 | Hindi atomic ang muling pagbabasa bago magsulat. Maliit ang puwang pero may pagitan pa rin ng dalawang sabay na request | `public.customer-account.reschedule.ts:514-560` |
 | 6 | Tatlong route ang may halos parehong code (CORS, token, parse) na paulit-ulit | tatlong `public.customer-account.*.ts` |
@@ -163,6 +165,8 @@ Ang `public.customer-account.order-delivery.ts` ay may parehong pag-verify ng to
 | 10 | Ang `rejected` at `pending` na sangay sa admin action ay legacy. Ang customer route ay `confirmed` lang ang isinusulat. Hindi pa nakikita ang ibang sumusulat | `OrderActionExtension.jsx:107-175` |
 | 11 | Ang libreng delivery na ₱2,500 ay naka-hardcode sa route ng fee checker | `apps.schedule-rules.coverage.ts:87` |
 | 12 | Ang COD ay inalis sa repo pero hindi masabi kung nasa Shopify pa. Magkaiba ang scopes ng toml at ng Cloud Run | seksyon 1 at 5 |
+| 13 | Hindi tinitingnan ng reschedule route ang `cancelledAt` (hindi ito kasama sa `ORDER_CUSTOMER_QUERY`). Ang cancelled na order na UNFULFILLED ay puwedeng i-reschedule. Hindi pa nakukumpirma kung itinatago ng Shopify ang action sa cancelled na order | `public.customer-account.reschedule.ts:23-47` |
+| 14 | `api_access = true` sa `delivery-reschedule-customer`, pero walang direktang Shopify API call ang modal (`fetch` sa app backend lang). Hindi pa nakukumpirma kung kailangan ito ng `sessionToken.get()` | `delivery-reschedule-customer/shopify.extension.toml` |
 
 ## 7. Hindi pa nababasa
 - Ang mga test ng bawat extension, ang mga `locales` (maliban sa pangalan ng mga file), at ang `test/extension-*.test.ts` sa repo.
@@ -171,3 +175,10 @@ Ang `public.customer-account.order-delivery.ts` ay may parehong pag-verify ng to
 - `apps.schedule-rules.ts`, `apps.schedule-rules.validate.ts`, `apps.schedule-rules.reschedule.ts`, `apps.schedule-rules.products.ts` (ang app proxy ng date picker sa theme).
 - Ang theme date picker sa Dawn (wala sa repo).
 - Ang estado ng mga extension at function sa Shopify (Partner dashboard).
+
+## 8. Binago pagkatapos ng audit (2026-10-25)
+- Commit `62b72e1` sa `order-action-modal.tsx` (client lang): double-submit guard, lock kapag terminal ang sagot ng server, at plain na mensahe sa network error. Walang binago sa backend, tag, metafield, attribute o fulfillment.
+- Resulta ng test: typecheck pasado, `npm run test:extensions` 37/37, `npm test` 510/510.
+- Wala sa mga flag sa seksyon 6 ang naayos ng pagbabagong ito. Ang flag #13 at #14 ay idinagdag pagkatapos ng audit.
+- Lalabas ang pagbabago sa customer account pagkatapos ng Shopify deploy (`npm run deploy:prod`), hindi ng Cloud Run deploy.
+- Ayon kay Jhay (hindi ko nakita ang resulta): gumana sa dev server nang may `custom.date` at `custom.time_slot` ang test order. Sa order na walang valid na `custom.date`, lumabas ang banner na "too close or has already passed" at naka-lock ang form (ayon sa screenshot).
